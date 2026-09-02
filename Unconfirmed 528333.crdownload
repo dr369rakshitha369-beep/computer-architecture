@@ -1,0 +1,338 @@
+"""
+============================================================
+CSA12 - COMPUTER ARCHITECTURE
+Design and Performance Optimization of a Modern Computer
+System Using Processor, Memory, Pipeline, and I/O Architecture
+------------------------------------------------------------
+Implementation: Performance Calculator, Workload Analysis,
+Multi-Level Cache Simulator, Pipeline + Branch Prediction
+Simulator, I/O Throughput Model, Multi-Core Scaling,
+and Legacy/Modern Processor Comparison
+============================================================
+"""
+
+import random
+
+random.seed(42)
+
+# ============================================================
+# SECTION 1: CPU PERFORMANCE CALCULATOR (Baseline vs Optimized)
+# ============================================================
+
+def calculate_performance(name, instruction_count, cpi, clock_speed_ghz):
+    clock_cycle_time_ns = 1 / clock_speed_ghz
+    total_clock_cycles = instruction_count * cpi
+    execution_time_ns = total_clock_cycles * clock_cycle_time_ns
+    execution_time_ms = execution_time_ns / 1e6
+    mips = (clock_speed_ghz * 1000) / cpi
+
+    print(f"\n--- {name} ---")
+    print(f"Instruction Count (IC)   : {instruction_count:,}")
+    print(f"CPI                      : {cpi}")
+    print(f"Clock Speed              : {clock_speed_ghz} GHz")
+    print(f"Clock Cycle Time         : {clock_cycle_time_ns:.4f} ns")
+    print(f"Total Clock Cycles       : {total_clock_cycles:,.0f}")
+    print(f"CPU Execution Time       : {execution_time_ms:.4f} ms")
+    print(f"MIPS                     : {mips:.2f}")
+
+    return execution_time_ms, mips
+
+
+print("=" * 65)
+print(" SECTION 1: CPU PERFORMANCE ANALYSIS - BASELINE vs OPTIMIZED")
+print("=" * 65)
+
+baseline_time, baseline_mips = calculate_performance(
+    "Baseline System (Single-Bus, No Pipelining)",
+    instruction_count=50_000_000, cpi=3.0, clock_speed_ghz=2.0
+)
+
+optimized_time, optimized_mips = calculate_performance(
+    "Optimized System (Superscalar + 5-Stage Pipeline + Hierarchical Bus)",
+    instruction_count=50_000_000, cpi=1.1, clock_speed_ghz=3.8
+)
+
+speedup = baseline_time / optimized_time
+improvement_pct = (1 - optimized_time / baseline_time) * 100
+
+print("\n--- Performance Improvement Summary ---")
+print(f"Speedup Factor            : {speedup:.2f}x")
+print(f"Execution Time Reduction  : {improvement_pct:.2f}%")
+print(f"MIPS Improvement          : {optimized_mips - baseline_mips:.2f} MIPS "
+      f"({((optimized_mips/baseline_mips)-1)*100:.2f}% increase)")
+
+
+# ============================================================
+# SECTION 2: WORKLOAD-BASED BENCHMARKING (Instruction Mix)
+# ============================================================
+
+print("\n" + "=" * 65)
+print(" SECTION 2: BENCHMARK WORKLOAD ANALYSIS (INSTRUCTION MIX)")
+print("=" * 65)
+
+workload = {
+    "ALU (Arithmetic/Logic)": {"freq": 0.35, "cpi_base": 1,  "cpi_opt": 1},
+    "Load/Store (Memory)":    {"freq": 0.30, "cpi_base": 6,  "cpi_opt": 2},
+    "Branch":                 {"freq": 0.15, "cpi_base": 4,  "cpi_opt": 1},
+    "Floating Point":         {"freq": 0.12, "cpi_base": 8,  "cpi_opt": 3},
+    "Vector/SIMD":            {"freq": 0.08, "cpi_base": 10, "cpi_opt": 2},
+}
+
+def weighted_cpi(workload, key):
+    return sum(v["freq"] * v[key] for v in workload.values())
+
+cpi_base_avg = weighted_cpi(workload, "cpi_base")
+cpi_opt_avg = weighted_cpi(workload, "cpi_opt")
+
+print(f"{'Instruction Type':<25}{'Freq %':>8}{'CPI(base)':>12}{'CPI(opt)':>12}")
+for k, v in workload.items():
+    print(f"{k:<25}{v['freq']*100:>7.0f}%{v['cpi_base']:>12}{v['cpi_opt']:>12}")
+
+print(f"\nWeighted Average CPI (Baseline)  : {cpi_base_avg:.3f}")
+print(f"Weighted Average CPI (Optimized) : {cpi_opt_avg:.3f}")
+print(f"CPI Reduction from Instruction Mix Optimization: "
+      f"{(1 - cpi_opt_avg/cpi_base_avg)*100:.2f}%")
+
+
+# ============================================================
+# SECTION 3: MULTI-LEVEL MEMORY HIERARCHY (L1 / L2 / L3) SIMULATION
+# ============================================================
+
+print("\n" + "=" * 65)
+print(" SECTION 3: MULTI-LEVEL CACHE SIMULATION (L1 / L2 / L3)")
+print("=" * 65)
+
+def simulate_cache(name, cache_size, access_trace, hit_latency=1, miss_latency=100):
+    cache = set()
+    hits, misses = 0, 0
+    total_latency = 0
+
+    for addr in access_trace:
+        block = addr // 4  # 4-word blocks
+        if block in cache:
+            hits += 1
+            total_latency += hit_latency
+        else:
+            misses += 1
+            total_latency += miss_latency
+            if len(cache) >= cache_size:
+                cache.pop()  # eviction
+            cache.add(block)
+
+    hit_rate = hits / len(access_trace) * 100
+    avg_access_time = total_latency / len(access_trace)
+
+    print(f"\n--- {name} ---")
+    print(f"Cache Size (blocks)      : {cache_size}")
+    print(f"Total Accesses           : {len(access_trace)}")
+    print(f"Hits / Misses            : {hits} / {misses}")
+    print(f"Hit Rate                 : {hit_rate:.2f}%")
+    print(f"Avg Memory Access Time   : {avg_access_time:.2f} cycles")
+    return hit_rate, avg_access_time
+
+
+trace = []
+for i in range(300):
+    base = random.choice([0, 40, 80, 120, 160, 200])
+    trace.append(base + random.randint(0, 12))
+
+l1_hit, l1_avg = simulate_cache("L1 Cache (small, fast)", cache_size=4, access_trace=trace,
+                                 hit_latency=1, miss_latency=100)
+l2_hit, l2_avg = simulate_cache("L2 Cache (medium)", cache_size=16, access_trace=trace,
+                                 hit_latency=4, miss_latency=100)
+l3_hit, l3_avg = simulate_cache("L3 Cache (large, shared)", cache_size=64, access_trace=trace,
+                                 hit_latency=12, miss_latency=100)
+
+print(f"\n--- Memory Hierarchy Improvement (L1 -> L3) ---")
+print(f"Hit Rate Improvement      : {l3_hit - l1_hit:.2f} percentage points")
+print(f"Access Time Reduction     : {(1 - l3_avg/l1_avg)*100:.2f}%")
+
+
+# ============================================================
+# SECTION 4: PIPELINE HAZARD SIMULATOR (5-Stage: IF ID EX MEM WB)
+# ============================================================
+
+print("\n" + "=" * 65)
+print(" SECTION 4: PIPELINE HAZARD SIMULATION (IF-ID-EX-MEM-WB)")
+print("=" * 65)
+
+def simulate_pipeline(instructions, hazards, use_forwarding):
+    stages = ["IF", "ID", "EX", "MEM", "WB"]
+    n = len(instructions)
+    timeline = []
+    total_stalls = 0
+
+    for i in range(n):
+        if i == 0:
+            start_cycle = 1
+        else:
+            start_cycle = timeline[i - 1] + 1
+            if i in hazards:
+                stall = 1 if use_forwarding else hazards[i]
+                start_cycle += stall
+                total_stalls += stall
+        timeline.append(start_cycle)
+
+    total_cycles = timeline[-1] + len(stages) - 1
+
+    print(f"\nForwarding Enabled: {use_forwarding}")
+    print(f"{'Instr':<16}", end="")
+    for c in range(1, total_cycles + 1):
+        print(f"{c:>4}", end="")
+    print()
+
+    for i, instr in enumerate(instructions):
+        print(f"{instr:<16}", end="")
+        start = timeline[i]
+        row = [" "] * total_cycles
+        for j, s in enumerate(stages):
+            pos = start + j - 1
+            if 0 <= pos < total_cycles:
+                row[pos] = s
+        for r in row:
+            print(f"{r:>4}", end="")
+        print()
+
+    ipc = n / total_cycles
+    print(f"\nTotal Cycles       : {total_cycles}")
+    print(f"Total Stall Cycles : {total_stalls}")
+    print(f"IPC (Instructions/Cycle) : {ipc:.3f}")
+    return total_cycles, total_stalls, ipc
+
+
+instructions = [
+    "ADD R1,R2,R3", "SUB R4,R1,R5", "MUL R6,R4,R7", "LD  R8,0(R6)",
+    "ADD R9,R8,R1", "SUB R10,R9,R2", "OR  R11,R10,R3", "AND R12,R4,R11"
+]
+hazards = {1: 2, 2: 2, 4: 2, 5: 2, 7: 2}
+
+print("\n[WITHOUT FORWARDING]")
+cycles_no_fwd, stalls_no_fwd, ipc_no_fwd = simulate_pipeline(instructions, hazards, use_forwarding=False)
+
+print("\n[WITH FORWARDING / OPERAND BYPASSING]")
+cycles_fwd, stalls_fwd, ipc_fwd = simulate_pipeline(instructions, hazards, use_forwarding=True)
+
+print(f"\n--- Forwarding Impact ---")
+print(f"Stall Cycles Removed       : {stalls_no_fwd - stalls_fwd}")
+print(f"Cycle Reduction            : {cycles_no_fwd - cycles_fwd} cycles")
+print(f"IPC Improvement            : {ipc_fwd - ipc_no_fwd:.3f} "
+      f"({((ipc_fwd/ipc_no_fwd)-1)*100:.2f}% increase)")
+
+
+# ------------------------------------------------------------
+# SECTION 4b: BRANCH PREDICTION (2-bit saturating counter)
+# ------------------------------------------------------------
+
+print("\n" + "=" * 65)
+print(" SECTION 4b: BRANCH PREDICTION SIMULATION (2-BIT COUNTER)")
+print("=" * 65)
+
+def simulate_branch_predictor(branch_outcomes):
+    # states: 0=Strong Not-Taken, 1=Weak Not-Taken, 2=Weak Taken, 3=Strong Taken
+    state = 1
+    correct = 0
+    history = []
+
+    for actual in branch_outcomes:
+        predicted = state >= 2
+        if predicted == actual:
+            correct += 1
+        history.append((predicted, actual))
+        if actual:
+            state = min(3, state + 1)
+        else:
+            state = max(0, state - 1)
+
+    accuracy = correct / len(branch_outcomes) * 100
+    print(f"Branch Sequence Length   : {len(branch_outcomes)}")
+    print(f"Correct Predictions      : {correct}")
+    print(f"Prediction Accuracy      : {accuracy:.2f}%")
+    return accuracy
+
+# Realistic branch pattern: mostly taken (typical loop-heavy code), some noise
+branch_outcomes = [random.random() < 0.8 for _ in range(100)]
+branch_accuracy = simulate_branch_predictor(branch_outcomes)
+
+
+# ============================================================
+# SECTION 5: I/O SUBSYSTEM THROUGHPUT COMPARISON
+# ============================================================
+
+print("\n" + "=" * 65)
+print(" SECTION 5: I/O ORGANIZATION - TRANSFER MODE COMPARISON")
+print("=" * 65)
+
+def io_transfer_time(name, data_mb, transfer_rate_mbps, cpu_overhead_pct):
+    base_time_s = data_mb / transfer_rate_mbps
+    cpu_busy_time_s = base_time_s * (cpu_overhead_pct / 100)
+    print(f"\n--- {name} ---")
+    print(f"Data Size                : {data_mb} MB")
+    print(f"Transfer Rate            : {transfer_rate_mbps} MB/s")
+    print(f"Total Transfer Time      : {base_time_s*1000:.2f} ms")
+    print(f"CPU Overhead             : {cpu_overhead_pct}% -> {cpu_busy_time_s*1000:.2f} ms CPU busy")
+    return base_time_s, cpu_busy_time_s
+
+data_mb = 500
+
+pio_time, pio_cpu = io_transfer_time("Programmed I/O (Polling)", data_mb, 50, 95)
+interrupt_time, interrupt_cpu = io_transfer_time("Interrupt-Driven I/O", data_mb, 80, 40)
+dma_time, dma_cpu = io_transfer_time("DMA (Direct Memory Access)", data_mb, 400, 5)
+
+print(f"\n--- I/O Efficiency Summary ---")
+print(f"DMA vs Programmed I/O Speedup     : {pio_time/dma_time:.2f}x faster")
+print(f"DMA CPU Overhead Reduction        : {pio_cpu/dma_cpu:.2f}x less CPU time used")
+
+
+# ============================================================
+# SECTION 6: MULTI-CORE SCALING (AMDAHL'S LAW)
+# ============================================================
+
+print("\n" + "=" * 65)
+print(" SECTION 6: MULTI-CORE PERFORMANCE SCALING (AMDAHL'S LAW)")
+print("=" * 65)
+
+def amdahl_speedup(parallel_fraction, cores):
+    serial_fraction = 1 - parallel_fraction
+    return 1 / (serial_fraction + parallel_fraction / cores)
+
+parallel_fraction = 0.85
+print(f"Parallelizable Fraction of Workload: {parallel_fraction*100:.0f}%\n")
+print(f"{'Cores':>8}{'Speedup':>12}")
+for cores in [1, 2, 4, 8, 16]:
+    sp = amdahl_speedup(parallel_fraction, cores)
+    print(f"{cores:>8}{sp:>12.3f}x")
+
+
+# ============================================================
+# SECTION 7: COMPARISON vs LEGACY (8085/8086) & MODERN CPUs
+# ============================================================
+
+print("\n" + "=" * 65)
+print(" SECTION 7: COMPARISON vs LEGACY & MODERN PROCESSORS")
+print("=" * 65)
+
+reference_cpus = [
+    ("Intel 8085",      6.00, 0.003),   # clock in GHz (3 MHz)
+    ("Intel 8086",      4.50, 0.005),   # 5 MHz
+    ("ARM Cortex-A78",  0.30, 2.8),
+    ("Intel Core i7",   0.25, 4.7),
+    ("AMD Ryzen 7",     0.28, 4.5),
+]
+
+instruction_count_cmp = 50_000_000
+comparison_results = []
+
+for name, cpi, clock_ghz in reference_cpus:
+    exec_time_ms, mips = calculate_performance(name, instruction_count_cmp, cpi, clock_ghz)
+    comparison_results.append((name, exec_time_ms, mips))
+
+print("\n--- Proposed Optimized Design vs Reference CPUs ---")
+print(f"{'Processor':<20}{'Exec Time (ms)':>18}{'Speedup vs Proposed':>22}")
+print(f"{'Optimized (this design)':<20}{optimized_time:>18.4f}{'1.00x (baseline)':>22}")
+for name, exec_time_ms, mips in comparison_results:
+    rel = exec_time_ms / optimized_time
+    print(f"{name:<20}{exec_time_ms:>18.4f}{rel:>21.2f}x")
+
+print("\n" + "=" * 65)
+print(" ALL SIMULATIONS COMPLETE")
+print("=" * 65)
